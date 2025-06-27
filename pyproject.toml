@@ -6,7 +6,15 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "automation-server-client",
+    "kmd-nexus-client",
+    "nexus-database-client",
+    "odk-tools",
+    "xflow-client",
 ]
 
 [tool.uv.sources]
 automation-server-client = { git = "https://github.com/odense-rpa/automation-server-client.git", tag = "v0.1.0" }
+nexus-database-client = { git = "https://github.com/odense-rpa/nexus-database-client.git", rev = "main" }
+kmd-nexus-client = { git = "https://github.com/odense-rpa/nexus-client.git", rev = "main" }
+xflow-client = { git = "https://github.com/odense-rpa/xflow-client.git", rev = "master" }
+odk-tools = { git = "https://github.com/odense-rpa/odk-tools.git", rev = "master" }
