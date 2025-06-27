@@ -64,8 +64,6 @@ async def populate_queue(workqueue: Workqueue):
         workqueue.add_item(kø_data, f"{flyt_opgaver_fra_initialer} - {flyt_opgaver_til_initialer}")        
 
 async def process_workqueue(workqueue: Workqueue):
-    logger = logging.getLogger(__name__)
-
     for item in workqueue:
         with item:
             data = item.data            
@@ -83,8 +81,9 @@ async def process_workqueue(workqueue: Workqueue):
                 }
 
             for opgave in opgaver:
-                try:                    
-                    nexus_opgave = assignments_client.get_assignment_by_citizen(opgave["patient_id"], opgave["id"])
+                try:
+                    citizen = citizens_client.get_citizen(opgave["cpr"])                    
+                    nexus_opgave = assignments_client.get_assignment_by_citizen(citizen, opgave["id"])
 
                     if nexus_opgave is None:
                         reporter.report(
@@ -111,12 +110,22 @@ async def process_workqueue(workqueue: Workqueue):
                         }
                     )
             
-            signatur = {
-                "signatur": f"RPA - Opgaveflytning mellem medarbejdere i Nexus - {data['from_initials']} -> {data['to_initials']}",
-                "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            blanket_data = {
+                "formValues": [
+                    {
+                        "elementIdentifier": "RPASignatur",
+                        "valueIdentifier": "Tekst",
+                        "value": "Behandlet af Tyra (RPA)"      
+                    },
+                    {
+                        "elementIdentifier": "RPABehandletDato",
+                        "valueIdentifier": "Dato",
+                        "value": datetime.today().strftime('%d-%m-%Y')      
+                    }
+                ]        
             }
 
-            xflow_process_client.update_process(data["xflow_process_id"], signatur)
+            xflow_process_client.update_process(data["xflow_process_id"], blanket_data)
             xflow_process_client.advance_process(data["xflow_process_id"])
 
 if __name__ == "__main__":    
@@ -124,7 +133,7 @@ if __name__ == "__main__":
     workqueue = ats.workqueue()
 
     nexus_credential = Credential.get_credential("KMD Nexus - produktion")
-    nexus_database_credential = Credential.get_credential("Nexus Database - produktion")
+    nexus_database_credential = Credential.get_credential("KMD Nexus - database")
     xflow_credential = Credential.get_credential("Xflow - produktion")
     tracking_credential = Credential.get_credential("Odense SQL Server")
     reporting_credential = Credential.get_credential("RoboA")
@@ -139,7 +148,7 @@ if __name__ == "__main__":
     organizations_client = OrganizationsClient(nexus_client=nexus_client)
     
     nexus_database_client = NexusDatabaseClient(
-        hostname = nexus_database_credential.data["hostname"],
+        host = nexus_database_credential.data["hostname"],
         port = nexus_database_credential.data["port"],
         user = nexus_database_credential.username,
         password = nexus_database_credential.password,

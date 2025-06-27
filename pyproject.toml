@@ -13,8 +13,8 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-automation-server-client = { git = "https://github.com/odense-rpa/automation-server-client.git", tag = "v0.1.0" }
 nexus-database-client = { git = "https://github.com/odense-rpa/nexus-database-client.git", rev = "main" }
 kmd-nexus-client = { git = "https://github.com/odense-rpa/nexus-client.git", rev = "main" }
 xflow-client = { git = "https://github.com/odense-rpa/xflow-client.git", rev = "master" }
 odk-tools = { git = "https://github.com/odense-rpa/odk-tools.git", rev = "master" }
+automation-server-client = { git = "https://github.com/odense-rpa/automation-server-client.git", rev = "main" }
