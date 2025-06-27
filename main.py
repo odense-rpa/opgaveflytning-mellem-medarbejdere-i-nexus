@@ -23,6 +23,8 @@ xflow_process_client = None
 tracker = None
 reporter = None
 
+proces_navn = "Opgaveflytning mellem medarbejdere i Nexus"
+
 async def populate_queue(workqueue: Workqueue):    
     xlow_søge_query = {
         "text": "OPGAVEFLYTNING MELLEM MEDARBEJDERE I NEXUS",
@@ -66,32 +68,56 @@ async def process_workqueue(workqueue: Workqueue):
 
     for item in workqueue:
         with item:
-            data = item.data
-            opgaver = nexus_database_client.get_tasks_by_professional(flyt_opgaver_fra_initialer)
+            data = item.data            
+            opgaver = nexus_database_client.get_tasks_by_professional(data["from_initials"])
 
-    for opgave in opgaver:
-        try:
-            
-            
-            #"id": opgave["id"],
-            #"patient_id": opgave["patient_id"],
-            #"related_activity_identifier": opgave["related_activity_identifier"],
-            #"cpr": opgave["cpr"]
-            # fetch professional info
-            # get assignment
-            # modifiy assignment json
-                # json["professionalAssignee"]["professionalId"] = int.Parse(responsible.Rows[0]["id"].ToString());
-                # json["professionalAssignee"]["displayName"] = responsible.Rows[0]["fullName"].ToString();		
-                # json["professionalAssignee"]["displayNameWithUniqId"] =	responsible.Rows[0]["fullName"].ToString() +" (" + responsible.Rows[0]["primaryIdentifier"].ToString() + ")";
-                # json["professionalAssignee"]["active"] = bool.Parse(responsible.Rows[0]["active"].ToString());
-            # update assignment
-            # track
-            pass
-        except WorkItemError as e:
-            # A WorkItemError represents a soft error that indicates the item should be passed to manual processing or a business logic fault
-            logger.error(f"Error processing item: {data}. Error: {e}")
-            item.fail(str(e))
+            til_medarbedjer = None
 
+            if data["to_initials"] is not None:
+                medarbedjer = organizations_client.get_professional_by_initials(data["to_initials"])
+                til_medarbedjer = {
+                    "professionalId": medarbedjer["id"],
+                    "displayName": medarbedjer["fullName"],
+                    "displayNameWithUniqId": f"{medarbedjer['fullName']} ({medarbedjer['primaryIdentifier']})",
+                    "active": medarbedjer["active"]
+                }
+
+            for opgave in opgaver:
+                try:                    
+                    nexus_opgave = assignments_client.get_assignment_by_citizen(opgave["patient_id"], opgave["id"])
+
+                    if nexus_opgave is None:
+                        reporter.report(
+                            process=proces_navn,
+                            group="Fejl",
+                            json={
+                                "CPR": opgave["cpr"],
+                                "Fejl": "Kunne ikke finde opgave i Nexus",
+                            }
+                        )
+
+                    nexus_opgave["professionalAssignee"] = til_medarbedjer
+
+                    assignments_client.edit_assignment(nexus_opgave)
+                    
+                    tracker.track_task(proces_navn)
+                except WorkItemError as e:
+                    reporter.report(
+                        process=proces_navn,
+                        group="Fejl",
+                        json={
+                            "CPR": opgave["cpr"],
+                            "Fejl": f"Kunne ikke redigere opgave med navn: {nexus_opgave["title"]} i Nexus",
+                        }
+                    )
+            
+            signatur = {
+                "signatur": f"RPA - Opgaveflytning mellem medarbejdere i Nexus - {data['from_initials']} -> {data['to_initials']}",
+                "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            }
+
+            xflow_process_client.update_process(data["xflow_process_id"], signatur)
+            xflow_process_client.advance_process(data["xflow_process_id"])
 
 if __name__ == "__main__":    
     ats = AutomationServer.from_environment()
