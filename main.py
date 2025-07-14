@@ -22,6 +22,7 @@ xflow_process_client = None
 
 tracker = None
 reporter = None
+logger = None
 
 proces_navn = "Opgaveflytning mellem medarbejdere i Nexus"
 
@@ -51,8 +52,11 @@ async def populate_queue(workqueue: Workqueue):
 
         if medarbejder_fra is None: 
             # Finder første (og eneste) acitivity tilhøerende RPAIntegration
-            activity_id = next(activity["activitiesToReject"][0] for activity in proces["activities"] if activity["activityName"] == "RPAIntegration")
+            activity_id = next(activity["possibleActivitiesIdsToRejectTo"][0] for activity in proces["activities"] if activity["activityName"] == "RPAIntegration")
             xflow_process_client.reject_process(proces["publicId"], activity_id, f"Medarbejder med initialer: {medarbejder_fra} blev ikke fundet i Nexus")
+            logging.warning(
+                    f"Anmodning med id: {proces['publicId']} blev afvist, da medarbejder med initialer: {flyt_opgaver_fra_initialer} ikke blev fundet i Nexus."
+                )
             break
             
         kø_data = {
@@ -71,7 +75,7 @@ async def process_workqueue(workqueue: Workqueue):
 
             til_medarbedjer = None
 
-            if data["to_initials"] is not None:
+            if data["to_initials"] is not None and not data["to_initials"].strip() == "":
                 medarbedjer = organizations_client.get_professional_by_initials(data["to_initials"])
                 til_medarbedjer = {
                     "professionalId": medarbedjer["id"],
@@ -170,6 +174,8 @@ if __name__ == "__main__":
         username=reporting_credential.username,
         password=reporting_credential.password
     )
+
+    logger = logging.getLogger(__name__)
 
     # Queue management
     if "--queue" in sys.argv:
