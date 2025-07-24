@@ -5,23 +5,17 @@ import sys
 from datetime import datetime
 from automation_server_client import AutomationServer, Workqueue, WorkItemError, Credential
 from nexus_database_client import NexusDatabaseClient
-from kmd_nexus_client import NexusClient, CitizensClient, AssignmentsClient, OrganizationsClient
+from kmd_nexus_client import NexusClientManager
 from xflow_client import XFlowClient, ProcessClient
 from odk_tools.tracking import Tracker
 from odk_tools.reporting import Reporter
 
-nexus_client = None
-citizens_client = None
-assignments_client = None
-organizations_client = None
-
-nexus_database_client = None
-
-xflow_client = None
-xflow_process_client = None
-
-tracker = None
-reporter = None
+nexus_client_manager: NexusClientManager = None
+nexus_database_client: NexusDatabaseClient = None
+xflow_client: XFlowClient = None
+xflow_process_client: ProcessClient = None
+tracker: Tracker = None
+reporter: Reporter = None
 logger = None
 
 proces_navn = "Opgaveflytning mellem medarbejdere i Nexus"
@@ -48,7 +42,7 @@ async def populate_queue(workqueue: Workqueue):
         flyt_opgaver_fra_initialer = xflow_process_client.find_process_element_value(proces, "FraMedarbejder", "Tekst")
         flyt_opgaver_til_initialer = xflow_process_client.find_process_element_value(proces, "TilMedarbejder", "Tekst")
 
-        medarbejder_fra = organizations_client.get_professional_by_initials(flyt_opgaver_fra_initialer)
+        medarbejder_fra = nexus_client_manager.organisationer.hent_medarbejder_ved_initialer(flyt_opgaver_fra_initialer)
 
         if medarbejder_fra is None: 
             # Finder første (og eneste) acitivity tilhøerende RPAIntegration
@@ -76,7 +70,7 @@ async def process_workqueue(workqueue: Workqueue):
             til_medarbedjer = None
 
             if data["to_initials"] is not None and not data["to_initials"].strip() == "":
-                medarbedjer = organizations_client.get_professional_by_initials(data["to_initials"])
+                medarbedjer = nexus_client_manager.organisationer.hent_medarbejder_ved_initialer(data["to_initials"])
                 til_medarbedjer = {
                     "professionalId": medarbedjer["id"],
                     "displayName": medarbedjer["fullName"],
@@ -86,8 +80,8 @@ async def process_workqueue(workqueue: Workqueue):
 
             for opgave in opgaver:
                 try:
-                    citizen = citizens_client.get_citizen(opgave["cpr"])                    
-                    nexus_opgave = assignments_client.get_assignment_by_citizen(citizen, opgave["id"])
+                    borger = nexus_client_manager.borgere.hent_borger(opgave["cpr"])                    
+                    nexus_opgave = nexus_client_manager.opgaver.hent_opgave_for_borger(borger, opgave["id"])
 
                     if nexus_opgave is None:
                         reporter.report(
@@ -101,10 +95,10 @@ async def process_workqueue(workqueue: Workqueue):
 
                     nexus_opgave["professionalAssignee"] = til_medarbedjer
 
-                    assignments_client.edit_assignment(nexus_opgave)
+                    nexus_client_manager.opgaver.rediger_opgave(nexus_opgave)
                     
                     tracker.track_task(proces_navn)
-                except WorkItemError as e:
+                except WorkItemError:
                     reporter.report(
                         process=proces_navn,
                         group="Fejl",
@@ -142,14 +136,11 @@ if __name__ == "__main__":
     tracking_credential = Credential.get_credential("Odense SQL Server")
     reporting_credential = Credential.get_credential("RoboA")
     
-    nexus_client = NexusClient(
+    nexus_client_manager = NexusClientManager(
         client_id=nexus_credential.username,
         client_secret=nexus_credential.password,
         instance=nexus_credential.data["instance"],
-    )
-    citizens_client = CitizensClient(nexus_client=nexus_client)
-    assignments_client = AssignmentsClient(nexus_client=nexus_client)
-    organizations_client = OrganizationsClient(nexus_client=nexus_client)
+    )    
     
     nexus_database_client = NexusDatabaseClient(
         host = nexus_database_credential.data["hostname"],
