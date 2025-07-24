@@ -17,4 +17,4 @@ nexus-database-client = { git = "https://github.com/odense-rpa/nexus-database-cl
 kmd-nexus-client = { git = "https://github.com/odense-rpa/nexus-client.git", rev = "main" }
 xflow-client = { git = "https://github.com/odense-rpa/xflow-client.git", rev = "master" }
 odk-tools = { git = "https://github.com/odense-rpa/odk-tools.git", rev = "master" }
-automation-server-client = { git = "https://github.com/odense-rpa/automation-server-client.git", rev = "main" }
+automation-server-client = { git = "https://github.com/odense-rpa/automation-server-client.git", rev = "54afff3c8554b39951ceceb8d63396d11838d9dd" }
