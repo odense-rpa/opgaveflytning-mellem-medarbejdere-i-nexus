@@ -10,15 +10,15 @@ from xflow_client import XFlowClient, ProcessClient
 from odk_tools.tracking import Tracker
 from odk_tools.reporting import Reporter
 
-nexus_client_manager: NexusClientManager = None
-nexus_database_client: NexusDatabaseClient = None
-xflow_client: XFlowClient = None
-xflow_process_client: ProcessClient = None
-tracker: Tracker = None
-reporter: Reporter = None
-logger = None
+nexus: NexusClientManager
+nexus_database_client: NexusDatabaseClient
+xflow_client: XFlowClient
+xflow_process_client: ProcessClient
+tracker: Tracker
+reporter: Reporter
 
 proces_navn = "Opgaveflytning mellem medarbejdere i Nexus"
+logger = logging.getLogger(proces_navn)
 
 async def populate_queue(workqueue: Workqueue):    
     xlow_søge_query = {
@@ -39,10 +39,10 @@ async def populate_queue(workqueue: Workqueue):
     for proces in igangværende_processer:        
         # TODO: Check if the process is already in the workqueue
         
-        flyt_opgaver_fra_initialer = xflow_process_client.find_process_element_value(proces, "FraMedarbejder", "Tekst")
-        flyt_opgaver_til_initialer = xflow_process_client.find_process_element_value(proces, "TilMedarbejder", "Tekst")
+        flyt_opgaver_fra_initialer: str = str(xflow_process_client.find_process_element_value(proces, "FraMedarbejder", "Tekst"))
+        flyt_opgaver_til_initialer: str = str(xflow_process_client.find_process_element_value(proces, "TilMedarbejder", "Tekst"))
 
-        medarbejder_fra = nexus_client_manager.organisationer.hent_medarbejder_ved_initialer(flyt_opgaver_fra_initialer)
+        medarbejder_fra = nexus.organisationer.hent_medarbejder_ved_initialer(flyt_opgaver_fra_initialer)
 
         if medarbejder_fra is None: 
             # Finder første (og eneste) acitivity tilhøerende RPAIntegration
@@ -67,21 +67,25 @@ async def process_workqueue(workqueue: Workqueue):
             data = item.data            
             opgaver = nexus_database_client.get_tasks_by_professional(data["from_initials"])
 
-            til_medarbedjer = None
+            til_medarbejder = None
 
             if data["to_initials"] is not None and not data["to_initials"].strip() == "":
-                medarbedjer = nexus_client_manager.organisationer.hent_medarbejder_ved_initialer(data["to_initials"])
-                til_medarbedjer = {
-                    "professionalId": medarbedjer["id"],
-                    "displayName": medarbedjer["fullName"],
-                    "displayNameWithUniqId": f"{medarbedjer['fullName']} ({medarbedjer['primaryIdentifier']})",
-                    "active": medarbedjer["active"]
+                medarbejder = nexus.organisationer.hent_medarbejder_ved_initialer(data["to_initials"])
+                til_medarbejder = {
+                    "professionalId": medarbejder["id"],
+                    "displayName": medarbejder["fullName"],
+                    "displayNameWithUniqId": f"{medarbejder['fullName']} ({medarbejder['primaryIdentifier']})",
+                    "active": medarbejder["active"]
                 }
 
-            for opgave in opgaver:
+            for opgave in opgaver:                
                 try:
-                    borger = nexus_client_manager.borgere.hent_borger(opgave["cpr"])                    
-                    nexus_opgave = nexus_client_manager.opgaver.hent_opgave_for_borger(borger, opgave["id"])
+                    borger = nexus.borgere.hent_borger(opgave["cpr"])
+
+                    if borger is None:
+                        raise WorkItemError(f"Kunne ikke finde borger med CPR: {opgave['cpr']}")
+
+                    nexus_opgave = nexus.opgaver.hent_opgave_for_borger(borger, opgave["id"])
 
                     if nexus_opgave is None:
                         reporter.report(
@@ -92,10 +96,10 @@ async def process_workqueue(workqueue: Workqueue):
                                 "Fejl": "Kunne ikke finde opgave i Nexus",
                             }
                         )
+                        continue
 
-                    nexus_opgave["professionalAssignee"] = til_medarbedjer
-
-                    nexus_client_manager.opgaver.rediger_opgave(nexus_opgave)
+                    nexus_opgave["professionalAssignee"] = til_medarbejder
+                    nexus.opgaver.rediger_opgave(nexus_opgave)
                     
                     tracker.track_task(proces_navn)
                 except WorkItemError:
@@ -104,7 +108,7 @@ async def process_workqueue(workqueue: Workqueue):
                         group="Fejl",
                         json={
                             "CPR": opgave["cpr"],
-                            "Fejl": f"Kunne ikke redigere opgave med navn: {nexus_opgave["title"]} i Nexus",
+                            "Fejl": f"Kunne ikke redigere opgave med navn: {nexus_opgave['title'] if nexus_opgave and 'title' in nexus_opgave else 'Ukendt'} i Nexus",
                         }
                     )
             
@@ -127,6 +131,10 @@ async def process_workqueue(workqueue: Workqueue):
             xflow_process_client.advance_process(data["xflow_process_id"])
 
 if __name__ == "__main__":    
+    logging.basicConfig(
+        level=logging.INFO        
+    )
+
     ats = AutomationServer.from_environment()
     workqueue = ats.workqueue()
 
@@ -136,7 +144,7 @@ if __name__ == "__main__":
     tracking_credential = Credential.get_credential("Odense SQL Server")
     reporting_credential = Credential.get_credential("RoboA")
     
-    nexus_client_manager = NexusClientManager(
+    nexus = NexusClientManager(
         client_id=nexus_credential.username,
         client_secret=nexus_credential.password,
         instance=nexus_credential.data["instance"],
