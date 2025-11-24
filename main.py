@@ -8,14 +8,13 @@ from nexus_database_client import NexusDatabaseClient
 from kmd_nexus_client import NexusClientManager
 from xflow_client import XFlowClient, ProcessClient
 from odk_tools.tracking import Tracker
-from odk_tools.reporting import Reporter
+from odk_tools.reporting import report
 
 nexus: NexusClientManager
 nexus_database_client: NexusDatabaseClient
 xflow_client: XFlowClient
 xflow_process_client: ProcessClient
 tracker: Tracker
-reporter: Reporter
 
 proces_navn = "Opgaveflytning mellem medarbejdere i Nexus"
 logger = logging.getLogger(proces_navn)
@@ -88,14 +87,14 @@ async def process_workqueue(workqueue: Workqueue):
                     nexus_opgave = nexus.opgaver.hent_opgave_for_borger(borger, opgave["id"])
 
                     if nexus_opgave is None:
-                        reporter.report(
-                            process=proces_navn,
+                        report(
+                            report_id="opgaveflytning_mellem_medarbejdere_i_nexus",
                             group="Fejl",
                             json={
                                 "CPR": opgave["cpr"],
                                 "Fejl": "Kunne ikke finde opgave i Nexus",
                             }
-                        )
+                        )                        
                         continue
 
                     nexus_opgave["professionalAssignee"] = til_medarbejder
@@ -103,15 +102,14 @@ async def process_workqueue(workqueue: Workqueue):
                     
                     tracker.track_task(proces_navn)
                 except WorkItemError:
-                    reporter.report(
-                        process=proces_navn,
-                        group="Fejl",
-                        json={
-                            "CPR": opgave["cpr"],
-                            "Fejl": f"Kunne ikke redigere opgave med navn: {nexus_opgave['title'] if nexus_opgave and 'title' in nexus_opgave else 'Ukendt'} i Nexus",
-                        }
+                    report(
+                            report_id="opgaveflytning_mellem_medarbejdere_i_nexus",
+                            group="Fejl",
+                            json={
+                                "CPR": opgave["cpr"],
+                                "Fejl": f"Kunne ikke redigere opgave med navn: {nexus_opgave['title'] if nexus_opgave and 'title' in nexus_opgave else 'Ukendt'} i Nexus",
+                            }
                     )
-            
             blanket_data = {
                 "formValues": [
                     {
@@ -142,8 +140,7 @@ if __name__ == "__main__":
     nexus_database_credential = Credential.get_credential("KMD Nexus - database")
     xflow_credential = Credential.get_credential("Xflow - produktion")
     tracking_credential = Credential.get_credential("Odense SQL Server")
-    reporting_credential = Credential.get_credential("RoboA")
-    
+        
     nexus = NexusClientManager(
         client_id=nexus_credential.username,
         client_secret=nexus_credential.password,
@@ -167,11 +164,6 @@ if __name__ == "__main__":
     tracker = Tracker(
         username=tracking_credential.username, 
         password=tracking_credential.password
-    )
-
-    reporter = Reporter(
-        username=reporting_credential.username,
-        password=reporting_credential.password
     )
 
     logger = logging.getLogger(__name__)
